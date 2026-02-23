@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>股票交易计划与复盘系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: { colors: { primary: '#1a56db', success: '#10b981', danger: '#ef4444', warning: '#f59e0b' } }
+            }
+        }
+    </script>
+    <style>
+        .modal-animate { animation: fadeIn 0.2s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        .stat-card { cursor: pointer; transition: all 0.2s; border-bottom: 4px solid transparent; }
+        .stat-card:hover { transform: translateY(-3px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+        .active-filter-all { border-bottom-color: #64748b !important; background-color: #f8fafc; }
+        .active-filter-success { border-bottom-color: #10b981 !important; background-color: #ecfdf5; }
+        .active-filter-fail { border-bottom-color: #ef4444 !important; background-color: #fef2f2; }
+        .active-filter-pending { border-bottom-color: #f59e0b !important; background-color: #fffbeb; }
+    </style>
+</head>
+
+<body class="bg-gray-50 p-4">
+    <div class="max-w-6xl mx-auto">
+        <header class="flex justify-between items-center mb-6 bg-white p-5 rounded-xl shadow-sm border-l-4 border-primary">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-800 flex items-center">
+                    <i class="fa fa-line-chart mr-3 text-primary"></i>我的交易计划复盘
+                </h1>
+                <p class="text-sm text-gray-400 mt-1">支持：编辑已有记录 & 期权自动 x100</p>
+            </div>
+            <button onclick="openModal()" class="bg-primary text-white px-6 py-2 rounded-lg hover:shadow-lg transition font-bold">
+                <i class="fa fa-plus mr-2"></i>制定新计划
+            </button>
+        </header>
+
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+            <div onclick="setQuickFilter('all')" id="card-all" class="stat-card bg-white p-4 rounded-lg shadow-sm active-filter-all">
+                <div class="text-gray-400 text-xs uppercase font-bold">总计划</div>
+                <div id="stat-total" class="text-2xl font-bold">0</div>
+            </div>
+            <div onclick="setQuickFilter('success')" id="card-success" class="stat-card bg-white p-4 rounded-lg shadow-sm">
+                <div class="text-success text-xs uppercase font-bold">交易成功</div>
+                <div id="stat-success" class="text-2xl font-bold text-success">0</div>
+            </div>
+            <div onclick="setQuickFilter('fail')" id="card-fail" class="stat-card bg-white p-4 rounded-lg shadow-sm">
+                <div class="text-danger text-xs uppercase font-bold">交易失败</div>
+                <div id="stat-fail" class="text-2xl font-bold text-danger">0</div>
+            </div>
+            <div onclick="setQuickFilter('pending')" id="card-pending" class="stat-card bg-white p-4 rounded-lg shadow-sm">
+                <div class="text-warning text-xs uppercase font-bold">待处理</div>
+                <div id="stat-pending" class="text-2xl font-bold text-warning">0</div>
+            </div>
+            <div class="bg-white p-4 rounded-lg shadow-sm border-b-4 border-primary">
+                <div class="text-primary text-xs uppercase font-bold">成功成交额</div>
+                <div id="stat-amount" class="text-xl font-bold text-primary truncate">￥0.00</div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+            <div class="p-4 border-b flex justify-between items-center">
+                <div class="flex gap-2">
+                    <input type="date" id="filter-date" onchange="renderTable()" class="border rounded px-2 py-1 text-sm outline-none">
+                    <select id="filter-market" onchange="renderTable()" class="border rounded px-2 py-1 text-sm outline-none">
+                        <option value="all">所有市场</option>
+                        <option value="美股">美股</option>
+                        <option value="美股期权">美股期权</option>
+                        <option value="港股">港股</option>
+                        <option value="A股">A股</option>
+                    </select>
+                    <input type="hidden" id="filter-status" value="all">
+                </div>
+                <button onclick="resetFilter()" class="text-xs text-blue-500">清除所有筛选</button>
+            </div>
+            <table class="w-full text-left">
+                <thead class="bg-gray-800 text-white text-sm">
+                    <tr>
+                        <th class="p-4">日期</th>
+                        <th class="p-4">股票/代码</th>
+                        <th class="p-4">方向/市场</th>
+                        <th class="p-4">价格x数量</th>
+                        <th class="p-4">计划金额</th>
+                        <th class="p-4 text-center">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="dataTable" class="divide-y"></tbody>
+            </table>
+            <div id="empty-hint" class="hidden p-10 text-center text-gray-400">无记录</div>
+        </div>
+    </div>
+
+    <div id="modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 modal-animate">
+            <h2 id="modalTitle" class="text-lg font-bold mb-4 text-primary border-b pb-2">制定交易计划</h2>
+            <input type="hidden" id="f_id">
+            <div class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">市场</label>
+                        <select id="f_market" onchange="updateCodeInputType()" class="w-full border rounded p-2 text-sm">
+                            <option value="美股">美股</option>
+                            <option value="美股期权">美股期权</option>
+                            <option value="港股">港股</option>
+                            <option value="A股">A股</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">方向</label>
+                        <select id="f_direction" class="w-full border rounded p-2 text-sm">
+                            <option value="买入">买入</option>
+                            <option value="卖出">卖出</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs text-gray-500 font-bold mb-1">代码/合约</label>
+                        <input id="f_symbol" type="text" oninput="validateSymbol(this)" class="w-full border rounded p-2 text-sm bg-blue-50 focus:bg-white" placeholder="必填">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">名称/备注</label>
+                        <input id="f_name" type="text" class="w-full border rounded p-2 text-sm" placeholder="选填">
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">日期</label>
+                        <input id="f_date" type="date" class="w-full border rounded p-1 text-xs">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-blue-600 font-bold mb-1">单价</label>
+                        <input id="f_price" type="number" step="0.001" oninput="calcTotal()" class="w-full border rounded p-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-blue-600 font-bold mb-1">数量</label>
+                        <input id="f_quantity" type="number" oninput="calcTotal()" class="w-full border rounded p-2 text-sm">
+                    </div>
+                </div>
+                <div class="bg-blue-50 p-3 rounded-lg flex justify-between items-center">
+                    <span class="text-xs font-bold text-blue-600">预估总额: <span id="option_hint" class="hidden font-normal text-[10px]">(x100)</span></span>
+                    <span id="f_total_display" class="text-base font-bold text-blue-700">￥ 0.00</span>
+                </div>
+                <textarea id="f_note" class="w-full border rounded p-2 h-16 text-sm" placeholder="理由..."></textarea>
+            </div>
+            <div class="flex justify-end mt-4 gap-3">
+                <button onclick="closeModal()" class="text-gray-400 px-2 text-sm">取消</button>
+                <button onclick="submitForm()" id="submitBtn" class="bg-primary text-white px-6 py-2 rounded-lg font-bold text-sm">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class LocalFileManager {
+            constructor() {
+                this.apiBase = 'http://localhost:3000/api';
+                this.data = { records: [] };
+            }
+            async load() {
+                try {
+                    const res = await fetch(`${this.apiBase}/data`);
+                    this.data = await res.json();
+                    renderTable();
+                } catch (e) { console.error("Load failed"); }
+            }
+            async save() {
+                return fetch(`${this.apiBase}/save`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(this.data)
+                });
+            }
+        }
+        const storage = new LocalFileManager();
+        
+        function updateCodeInputType() {
+            const m = document.getElementById('f_market').value;
+            const input = document.getElementById('f_symbol');
+            const hint = document.getElementById('option_hint');
+            hint.classList.toggle('hidden', m !== "美股期权");
+            input.placeholder = (m === "美股") ? "字母代码" : (m === "美股期权" ? "合约代码" : "数字代码");
+            calcTotal();
+        }
+        
+        function validateSymbol(input) {
+            const m = document.getElementById('f_market').value;
+            if (m === "美股") input.value = input.value.replace(/[^a-zA-Z]/g, '').toUpperCase();
+            else if (m === "美股期权") input.value = input.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+            else input.value = input.value.replace(/[^\d]/g, '');
+        }
+        
+        function openModal() {
+            document.getElementById('modal').classList.remove('hidden');
+            document.getElementById('modalTitle').innerText = "制定交易计划";
+            document.getElementById('f_id').value = ""; // 清空ID表示新增
+            document.getElementById('f_date').value = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+            updateCodeInputType();
+        }
+        
+        function editItem(id) {
+            const record = storage.data.records.find(r => r.id === id);
+            if (!record) return;
+        
+            document.getElementById('modal').classList.remove('hidden');
+            document.getElementById('modalTitle').innerText = "修改交易计划";
+            
+            // 填充数据
+            document.getElementById('f_id').value = record.id;
+            document.getElementById('f_market').value = record.market;
+            document.getElementById('f_direction').value = record.direction;
+            document.getElementById('f_symbol').value = record.symbol;
+            document.getElementById('f_name').value = record.name;
+            document.getElementById('f_date').value = record.date;
+            document.getElementById('f_price').value = record.price;
+            document.getElementById('f_quantity').value = record.quantity;
+            document.getElementById('f_note').value = record.note;
+            
+            updateCodeInputType();
+            calcTotal();
+        }
+        
+        function closeModal() {
+            document.getElementById('modal').classList.add('hidden');
+            ['f_id','f_symbol','f_name','f_price','f_quantity','f_note'].forEach(id => document.getElementById(id).value = '');
+        }
+        
+        function calcTotal() {
+            const p = parseFloat(document.getElementById('f_price').value) || 0;
+            const q = parseFloat(document.getElementById('f_quantity').value) || 0;
+            let total = p * q;
+            if (document.getElementById('f_market').value === "美股期权") total *= 100;
+            document.getElementById('f_total_display').innerText = '￥ ' + total.toLocaleString(undefined, {minimumFractionDigits: 2});
+        }
+        
+        async function submitForm() {
+            const btn = document.getElementById('submitBtn');
+            const editId = document.getElementById('f_id').value;
+            const m = document.getElementById('f_market').value;
+            const p = parseFloat(document.getElementById('f_price').value || 0);
+            const q = parseFloat(document.getElementById('f_quantity').value || 0);
+            let finalAmt = p * q;
+            if (m === "美股期权") finalAmt *= 100;
+        
+            if(!document.getElementById('f_symbol').value || p <= 0) return alert('必填项缺失');
+        
+            btn.innerText = '保存中...';
+            btn.disabled = true;
+        
+            const recordData = {
+                date: document.getElementById('f_date').value,
+                market: m,
+                direction: document.getElementById('f_direction').value,
+                symbol: document.getElementById('f_symbol').value,
+                name: document.getElementById('f_name').value || '未命名',
+                price: p,
+                quantity: q,
+                totalAmount: finalAmt,
+                note: document.getElementById('f_note').value || '无'
+            };
+        
+            try {
+                if (editId) {
+                    // 编辑逻辑
+                    const idx = storage.data.records.findIndex(r => r.id == editId);
+                    if (idx !== -1) {
+                        storage.data.records[idx] = { ...storage.data.records[idx], ...recordData };
+                    }
+                } else {
+                    // 新增逻辑
+                    storage.data.records.unshift({ id: Date.now(), status: 'pending', ...recordData });
+                }
+                await storage.save();
+                btn.innerText = '成功！';
+            } catch (e) { console.error(e); }
+            finally {
+                setTimeout(() => {
+                    closeModal();
+                    btn.innerText = '保存';
+                    btn.disabled = false;
+                    renderTable();
+                }, 500);
+            }
+        }
+        
+        function renderTable() {
+            const list = storage.data.records;
+            const fDate = document.getElementById('filter-date').value;
+            const fMarket = document.getElementById('filter-market').value;
+            const fStatus = document.getElementById('filter-status').value;
+        
+            const filtered = list.filter(i => (fDate ? i.date === fDate : true) && (fMarket === 'all' || i.market === fMarket) && (fStatus === 'all' || i.status === fStatus));
+        
+            let sCount = 0, fCount = 0, pCount = 0, totalAmt = 0;
+            list.forEach(i => {
+                const amt = i.totalAmount || (i.price * i.quantity);
+                if(i.status === 'success') { sCount++; totalAmt += amt; }
+                else if(i.status === 'fail') fCount++;
+                else pCount++;
+            });
+        
+            document.getElementById('stat-total').innerText = list.length;
+            document.getElementById('stat-success').innerText = sCount;
+            document.getElementById('stat-fail').innerText = fCount;
+            document.getElementById('stat-pending').innerText = pCount;
+            document.getElementById('stat-amount').innerText = '￥' + totalAmt.toLocaleString(undefined, {minimumFractionDigits: 2});
+        
+            const tbody = document.getElementById('dataTable');
+            document.getElementById('empty-hint').className = filtered.length === 0 ? 'p-10 text-center block' : 'hidden';
+            
+            tbody.innerHTML = filtered.map(i => {
+                const isOpt = i.market === '美股期权';
+                const amt = i.totalAmount || (i.price * i.quantity);
+                return `
+                <tr class="hover:bg-gray-50 border-b group text-sm">
+                    <td class="p-4 text-xs text-gray-400">${i.date}</td>
+                    <td class="p-4">
+                        <div class="font-bold text-gray-800">${i.name}</div>
+                        <div class="text-[10px] text-gray-500 font-mono">${i.symbol}</div>
+                    </td>
+                    <td class="p-4">
+                        <span class="px-2 py-0.5 rounded text-xs ${i.direction==='买入'?'bg-red-50 text-red-600':'bg-green-50 text-green-600'}">${i.direction}</span>
+                        <div class="text-[10px] text-gray-400 mt-1">${i.market}</div>
+                    </td>
+                    <td class="p-4">${i.price.toFixed(2)} x ${i.quantity}${isOpt ? '<span class="text-blue-500 font-bold ml-1">x100</span>' : ''}</td>
+                    <td class="p-4 font-bold text-primary">￥${amt.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td class="p-4 text-center">
+                        <div class="flex flex-col items-center gap-1">
+                            ${i.status === 'pending' ? `
+                                <div class="flex gap-1">
+                                    <button onclick="updateStatus(${i.id}, 'success')" class="bg-success text-white text-[10px] px-2 py-1 rounded hover:opacity-80">成交</button>
+                                    <button onclick="updateStatus(${i.id}, 'fail')" class="bg-danger text-white text-[10px] px-2 py-1 rounded hover:opacity-80">失败</button>
+                                </div>
+                            ` : `<span class="${i.status==='success'?'text-success':'text-danger'} font-bold text-xs">${i.status==='success'?'●成功':'●失败'}</span>`}
+                            
+                            <div class="flex gap-3 mt-1 opacity-0 group-hover:opacity-100 transition">
+                                <button onclick="editItem(${i.id})" title="编辑" class="text-blue-500 hover:text-blue-700 text-xs">
+                                    <i class="fa fa-pencil"></i>
+                                </button>
+                                <button onclick="deleteItem(${i.id})" title="删除" class="text-gray-300 hover:text-red-500 text-xs">
+                                    <i class="fa fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </td>
+                </tr>`}).join('');
+        }
+        
+        async function updateStatus(id, s) {
+            const idx = storage.data.records.findIndex(r => r.id === id);
+            if(idx !== -1) { storage.data.records[idx].status = s; await storage.save(); renderTable(); }
+        }
+        async function deleteItem(id) {
+            if(confirm('确定删除该记录吗？')) { storage.data.records = storage.data.records.filter(r => r.id !== id); await storage.save(); renderTable(); }
+        }
+        function setQuickFilter(s) {
+            document.getElementById('filter-status').value = s;
+            ['all', 'success', 'fail', 'pending'].forEach(c => document.getElementById('card-' + c).className = `stat-card bg-white p-4 rounded-lg shadow-sm ${s === c ? 'active-filter-' + c : ''}`);
+            renderTable();
+        }
+        function resetFilter() { document.getElementById('filter-date').value = ''; document.getElementById('filter-market').value = 'all'; setQuickFilter('all'); }
+        window.onload = () => storage.load();
+    </script>
+</body>
+
+</html>
